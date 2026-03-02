@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tic Tac Toe — AI & Sound</title>
+<style>
+:root{
+  --bg1:#071029; --bg2:#0b2540; --card:rgba(255,255,255,0.05);
+  --accent:#ffb86b; --accent-2:#ff6b6b; --muted:#e6eef8; --cell-bg:rgba(255,255,255,0.02);
+  --cell-border:rgba(255,255,255,0.08); --win-glow:#4caf50; --glass: rgba(255,255,255,0.05);
+  --ui-radius:16px; --safe-bottom: env(safe-area-inset-bottom,12px);
+}
+html,body{height:100%; margin:0; font-family:Inter,Segoe UI,Roboto,sans-serif;
+  background:linear-gradient(135deg,var(--bg1),var(--bg2)); color:var(--muted);
+  display:flex; align-items:center; justify-content:center; padding:12px; box-sizing:border-box;}
+.container{width:100%; max-width:460px; display:flex; flex-direction:column; gap:12px; align-items:center;}
+.card{width:100%; background:var(--card); border-radius:20px; padding:20px; box-shadow:0 15px 40px rgba(0,0,0,0.55); backdrop-filter:blur(12px);}
+h1{margin:0; text-align:center; font-size:2rem; letter-spacing:3px; color:var(--accent); text-shadow:0 0 20px rgba(255,184,107,0.7);}
+.board{width:min(86vw,360px); height:min(86vw,360px); display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:10px; border-radius:14px; background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01)); box-shadow: inset 0 2px 8px rgba(0,0,0,0.25);}
+.cell{background:var(--cell-bg); border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:clamp(28px,9vw,56px); font-weight:900; color:var(--muted); cursor:pointer; user-select:none; border:2px solid var(--cell-border); transition:transform .15s ease, background .25s ease;}
+.cell:hover{transform:scale(1.08); box-shadow:0 0 10px rgba(255,255,255,0.2);}
+.cell.taken{cursor:default; opacity:0.95;}
+.cell.win{animation: winPulse 900ms infinite alternate; background:linear-gradient(90deg,var(--win-glow), #9be7a6) !important; color:#fff !important; box-shadow:0 0 30px rgba(76,175,80,0.35);}
+@keyframes winPulse {from{box-shadow:0 0 10px rgba(76,175,80,0.25);} to{box-shadow:0 0 30px rgba(76,175,80,0.45);}}
+.bottom-bar{position:fixed; left:12px; right:12px; bottom: calc(var(--safe-bottom)+8px); display:flex; gap:4px; justify-content:space-between; align-items:center; padding:8px; background:var(--card); border-radius:12px; box-shadow:0 12px 30px rgba(0,0,0,0.45);}
+.control-btn{flex:1; padding:10px 6px; border-radius:12px; border:none; font-weight:700; font-size:12px; color:#fff; background:linear-gradient(90deg,var(--accent),var(--accent-2)); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; transition:transform .2s ease;}
+.control-btn:hover{transform:scale(1.05);}
+.control-btn.ghost{background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,0.06);}
+.control-btn.danger{background: linear-gradient(90deg, #ff4b2b, #ff416c);}
+.history{margin-top:10px; max-height:120px; overflow:auto; background:var(--glass); border-radius:10px; padding:6px;}
+.message-box{position:fixed; top:20%; left:50%; transform:translateX(-50%); background:var(--accent); color:#fff; padding:12px 24px; border-radius:20px; font-size:1.2rem; font-weight:700; text-align:center; box-shadow:0 0 25px rgba(255,184,107,0.6); opacity:0; pointer-events:none; transition:opacity .4s ease;}
+.message-box.show{opacity:1; pointer-events:auto;}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="card">
+    <h1>TIC TAC TOE</h1>
+    <div class="board" id="board"></div>
+    <div style="margin-top:10px; display:flex; justify-content:space-between;">
+      <div>Turn: <span id="turnLabel">X</span></div>
+      <div>X: <span id="scoreX">0</span> O: <span id="scoreO">0</span></div>
+    </div>
+    <div class="options" style="margin-top:10px; display:flex; justify-content:center; gap:4px;">
+      <button class="control-btn ghost" id="undoBtn">Undo</button>
+      <button class="control-btn" id="restartBtn">Restart</button>
+      <button class="control-btn ghost" id="hintBtn">Hint</button>
+      <button class="control-btn danger" id="resetScoreBtn">Reset</button>
+      <button class="control-btn ghost" id="cancelBtn">Cancel</button>
+      <button class="control-btn ghost" id="aiToggleBtn">AI: ON</button>
+    </div>
+    <div class="history" id="history"></div>
+  </div>
+</div>
+
+<div class="message-box" id="messageBox"></div>
+
+<!-- Sounds -->
+<audio id="moveSound" src="click.mp3" preload="auto"></audio>
+<audio id="winSound" src="win.mp3" preload="auto"></audio>
+<audio id="drawSound" src="draw.mp3" preload="auto"></audio>
+<audio id="btnSound" src="btn.mp3" preload="auto"></audio>
+
+<script>
+const boardEl = document.getElementById('board');
+const undoBtn = document.getElementById('undoBtn');
+const restartBtn = document.getElementById('restartBtn');
+const hintBtn = document.getElementById('hintBtn');
+const resetScoreBtn = document.getElementById('resetScoreBtn');
+const cancelBtn = document.getElementById('cancelBtn');
+const turnLabel = document.getElementById('turnLabel');
+const scoreXEl = document.getElementById('scoreX');
+const scoreOEl = document.getElementById('scoreO');
+const historyEl = document.getElementById('history');
+const aiToggleBtn = document.getElementById('aiToggleBtn');
+const messageBox = document.getElementById('messageBox');
+
+let cells = Array(9).fill('');
+let currentPlayer = 'X';
+let gameActive = true;
+let scores = {X:0,O:0};
+let moveStack = [];
+let historyList = [];
+let aiEnabled = true;
+
+const moveSound = document.getElementById('moveSound');
+const winSound = document.getElementById('winSound');
+const drawSound = document.getElementById('drawSound');
+const btnSound = document.getElementById('btnSound');
+
+const winningCombos = [
+  [0,1,2],[3,4,5],[6,7,8],
+  [0,3,6],[1,4,7],[2,5,8],
+  [0,4,8],[2,4,6]
+];
+
+// Unlock sounds on first user interaction
+document.body.addEventListener('click',()=>{ 
+  [moveSound,winSound,drawSound,btnSound].forEach(s=>s.play().catch(()=>{}));
+}, {once:true});
+
+// --- UI & Board ---
+function renderBoard(){
+  boardEl.innerHTML='';
+  for(let i=0;i<9;i++){
+    const cell = document.createElement('div');
+    cell.className='cell'+(cells[i]?' taken':'');
+    cell.dataset.index=i;
+    cell.innerText = cells[i]||'';
+    cell.addEventListener('click',onCellClick);
+    boardEl.appendChild(cell);
+  }
+}
+function updateUI(){
+  turnLabel.innerText = gameActive?currentPlayer:'-';
+  scoreXEl.innerText = scores.X;
+  scoreOEl.innerText = scores.O;
+}
+
+// --- Game logic ---
+function checkWinFor(player){
+  for(const combo of winningCombos){
+    if(combo.every(i=>cells[i]===player)) return combo;
+  }
+  return null;
+}
+function showMessage(text){
+  messageBox.innerText=text;
+  messageBox.classList.add('show');
+  setTimeout(()=>messageBox.classList.remove('show'),1500);
+}
+function checkWin(){
+  const combo = checkWinFor(currentPlayer);
+  if(combo){
+    combo.forEach(i=>boardEl.children[i].classList.add('win'));
+    gameActive=false;
+    scores[currentPlayer]++;
+    addHistory(`${currentPlayer} wins`);
+    winSound.play();
+    showMessage(`${currentPlayer} Wins!`);
+    updateUI();
+    return true;
+  }
+  if(cells.every(c=>c!=='')){
+    gameActive=false;
+    addHistory('Draw');
+    drawSound.play();
+    showMessage(`Draw!`);
+    updateUI();
+    return false;
+  }
+  return false;
+}
+
+// --- History ---
+function addHistory(text){
+  const time = new Date().toLocaleTimeString();
+  historyList.unshift({text,time});
+  if(historyList.length>30) historyList.pop();
+  renderHistory();
+}
+function renderHistory(){
+  historyEl.innerHTML='';
+  historyList.forEach(h=>{
+    const div = document.createElement('div');
+    div.textContent=`${h.text} [${h.time}]`;
+    historyEl.appendChild(div);
+  });
+}
+
+// --- Moves ---
+function makeMove(idx,player){
+  if(cells[idx] || !gameActive) return;
+  cells[idx]=player;
+  moveStack.push({index:idx,player});
+  renderBoard();
+  updateUI();
+  moveSound.play();
+  addHistory(`Move: ${player} -> ${idx}`);
+}
+
+function onCellClick(e){
+  const idx=Number(e.currentTarget.dataset.index);
+  if(!gameActive || cells[idx]) return;
+  makeMove(idx,currentPlayer);
+  if(!checkWin()) {
+    switchPlayer();
+    if(aiEnabled && currentPlayer==='O') setTimeout(aiMove,300);
+  }
+}
+
+// --- Undo / Restart / Hint / Reset / Cancel ---
+function undoMove(){
+  if(moveStack.length===0) return;
+  const last=moveStack.pop();
+  cells[last.index]='';
+  currentPlayer=last.player;
+  renderBoard();
+  updateUI();
+  btnSound.play();
+  addHistory('Undo performed');
+}
+function restartGame(){
+  cells=Array(9).fill('');
+  moveStack=[];
+  gameActive=true;
+  currentPlayer='X';
+  renderBoard();
+  updateUI();
+  btnSound.play();
+  addHistory('Round restarted');
+}
+function showHint(){
+  if(!gameActive) return;
+  const avail = cells.map((v,i)=>v===''?i:null).filter(v=>v!==null);
+  if(avail.length===0) return;
+  const move = avail[Math.floor(Math.random()*avail.length)];
+  boardEl.children[move].style.boxShadow='0 0 18px rgba(255,255,255,0.9)';
+  setTimeout(()=>boardEl.children[move].style.boxShadow='',900);
+  addHistory(`Hint: ${move}`);
+  btnSound.play();
+}
+function resetScores(){
+  scores={X:0,O:0};
+  updateUI();
+  addHistory('Scores reset');
+  btnSound.play();
+}
+function cancelGame(){
+  cells=Array(9).fill('');
+  moveStack=[];
+  gameActive=false;
+  renderBoard();
+  updateUI();
+  addHistory('Game cancelled');
+  btnSound.play();
+}
+
+// --- AI (random) ---
+function aiMove(){
+  if(!gameActive) return;
+  const avail = cells.map((v,i)=>v===''?i:null).filter(v=>v!==null);
+  if(avail.length===0) return;
+  const move = avail[Math.floor(Math.random()*avail.length)];
+  makeMove(move,'O');
+  if(!checkWin()) switchPlayer();
+}
+
+// --- Switch Player ---
+function switchPlayer(){
+  currentPlayer=currentPlayer==='X'?'O':'X';
+  updateUI();
+}
+
+// --- Toggle AI ---
+function toggleAI(){
+  aiEnabled=!aiEnabled;
+  aiToggleBtn.innerText=`AI: ${aiEnabled?'ON':'OFF'}`;
+  btnSound.play();
+}
+
+// --- Event listeners ---
+undoBtn.addEventListener('click',undoMove);
+restartBtn.addEventListener('click',restartGame);
+hintBtn.addEventListener('click',showHint);
+resetScoreBtn.addEventListener('click',resetScores);
+cancelBtn.addEventListener('click',cancelGame);
+aiToggleBtn.addEventListener('click',toggleAI);
+
+renderBoard();
+updateUI();
+renderHistory();
+</script>
+</body>
+</html>
